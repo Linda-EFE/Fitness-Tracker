@@ -321,16 +321,7 @@ svg text { font-family: var(--f-body); }
         '<button type="button" class="btn btn-ghost" id="data-export" style="width:100%">Sicherung speichern</button>' +
         '<button type="button" class="btn btn-ghost" id="data-import" style="width:100%">Sicherung laden</button>' +
         '<input type="file" id="data-file" accept="application/json,.json" hidden>' +
-        '<div class="q-head" style="margin-top:8px"><span class="eyebrow">Foto-Auswertung</span><h2>Claude-Schlüssel</h2>' +
-        '<p class="lead">Damit schätzt die App Kalorien und Makros aus einem Foto oder einer kurzen Beschreibung.</p></div>' +
-        '<div class="explain"><b>Einmalig: API-Schlüssel anlegen</b><ol class="steps-howto" style="margin-top:8px">' +
-          "<li>Auf <b>platform.claude.com</b> anmelden. Mit einem Claude-Max-Abo kannst du dort monatliches API-Guthaben einlösen, sonst lädst du unter <b>Guthaben</b> etwas auf (abgerechnet wird pro Foto).</li>" +
-          "<li>Unter <b>API-Schlüssel</b> einen neuen Schlüssel erstellen, Name z. B. „Fitness-Tracker“.</li>" +
-          "<li>Schlüssel kopieren und hier einfügen.</li>" +
-        "</ol></div>" +
-        '<div class="field"><label for="c-key">API-Schlüssel</label><span class="hint">Bleibt nur auf diesem Gerät gespeichert.</span>' +
-          '<input id="c-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="' + esc(aiKey) + '"></div>' +
-        '<div class="nav"><button type="button" class="btn btn-ghost" id="sync-cancel">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>' +
+        '<div class="nav"><button type="submit" class="btn btn-primary" style="flex:1">Fertig</button></div>' +
       "</form>";
   }
 
@@ -530,7 +521,6 @@ svg text { font-family: var(--f-body); }
     if (e.target.id === "ai-again") { analyze(!!photo); return; }
     if (e.target.id === "ai-photo-clear") { photo = null; aiNote = ""; aiQuestion = ""; renderTracker(); return; }
     if (e.target.id === "open-settings") { showSettings = true; settingsMsg = settingsOk = ""; render(); window.scrollTo(0, 0); return; }
-    if (e.target.id === "ai-setup") { showSettings = true; settingsMsg = settingsOk = ""; render(); window.scrollTo(0, 0); setTimeout(function () { var k = document.getElementById("c-key"); if (k) k.scrollIntoView({ block: "center" }); }, 50); return; }
     var mb = e.target.closest("[data-meal]");
     if (mb) {
       var act = mb.getAttribute("data-act"), id = mb.getAttribute("data-meal");
@@ -545,8 +535,6 @@ svg text { font-family: var(--f-body); }
   app.addEventListener("submit", function (e) {
     e.preventDefault();
     if (e.target.id === "syncform") {
-      aiKey = document.getElementById("c-key").value.trim();
-      try { localStorage.setItem(AI_KEY, aiKey); } catch (er) {}
       showSettings = false; render(); window.scrollTo(0, 0);
       return;
     }
@@ -706,33 +694,44 @@ svg text { font-family: var(--f-body); }
   }
 
   /* ---------- Foto-Auswertung mit Claude ---------- */
-  var AI_KEY = "fitnesstracker-claude-key", aiKey = "";
-  try { aiKey = localStorage.getItem(AI_KEY) || ""; } catch (e) {}
+  /* Adresse des Cloudflare Workers (siehe worker/README.md). Leer = Foto-Auswertung noch nicht eingerichtet. */
+  var WORKER_URL = "";
+  var KONTAKT = "Das ist eine Testversion und du hast {n} Mahlzeiten-Fotos verbraucht. Melde dich beim Eduard unter " +
+    '<a href="mailto:Eduard.Helbling@gmail.com">Eduard.Helbling@gmail.com</a>, wenn du das Feature weiter nutzen möchtest.';
+  var DEV_KEY = "fitnesstracker-geraet", USE_KEY = "fitnesstracker-fotos", deviceId = "", usage = { verbraucht: 0, limit: null };
+  function newId() { return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 14)); }
+  try { deviceId = localStorage.getItem(DEV_KEY) || ""; if (!deviceId) { deviceId = newId(); localStorage.setItem(DEV_KEY, deviceId); } } catch (e) { deviceId = deviceId || newId(); }
+  try { var su = JSON.parse(localStorage.getItem(USE_KEY) || "null"); if (su && typeof su.verbraucht === "number") usage = su; } catch (e) {}
+  function setUsage(d) {
+    if (!d || typeof d.verbraucht !== "number" || typeof d.limit !== "number") return;
+    usage = { verbraucht: d.verbraucht, limit: d.limit };
+    try { localStorage.setItem(USE_KEY, JSON.stringify(usage)); } catch (e) {}
+  }
+  function limitReached() { return usage.limit != null && usage.verbraucht >= usage.limit; }
+  function loadUsage() {
+    if (!WORKER_URL) return;
+    fetch(WORKER_URL + "?geraet=" + encodeURIComponent(deviceId), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { var was = JSON.stringify(usage); setUsage(d); if (JSON.stringify(usage) !== was && state.view === "tracker" && !showSettings) renderTracker(); })
+      .catch(function () {});
+  }
   var photo = null, aiBusy = false, aiNote = "", aiQuestion = "", aiError = "";
   function resetAi() { photo = null; aiBusy = false; aiNote = ""; aiQuestion = ""; aiError = ""; }
-  var MEAL_SCHEMA = {
-    type: "object", additionalProperties: false,
-    required: ["name", "annahme", "kcal", "eiweiss_g", "kohlenhydrate_g", "fett_g", "rueckfrage"],
-    properties: {
-      name: { type: "string", description: "Kurzer Name der Mahlzeit auf Deutsch" },
-      annahme: { type: "string", description: "Ein Satz: welche Portion und Zubereitung du annimmst" },
-      kcal: { type: "number" }, eiweiss_g: { type: "number" }, kohlenhydrate_g: { type: "number" }, fett_g: { type: "number" },
-      rueckfrage: { type: "string", description: "Genau eine kurze Rückfrage, wenn du wirklich unsicher bist, sonst leerer String" }
-    }
-  };
   function aiBlock() {
     if (editingId) return "";
     var inner;
-    if (!aiKey) {
-      inner = '<p class="note" style="margin:0">Mit einem Claude-Schlüssel schätzt die App Kalorien und Makros aus einem Foto.</p>' +
-        '<div class="ai-row"><button type="button" class="btn btn-soft" id="ai-setup">Foto-Auswertung einrichten</button></div>';
+    if (!WORKER_URL) {
+      inner = '<p class="note" style="margin:0">Die Foto-Auswertung wird gerade eingerichtet. Bis dahin trägst du die Werte unten von Hand ein.</p>';
     } else {
+      var used = limitReached();
       inner =
+        (used ? '<p class="ai-q" role="status">' + KONTAKT.replace("{n}", fmt(usage.limit)) + "</p>" :
+          (usage.limit != null ? '<p class="note" style="margin:0">Testversion: noch ' + fmt(usage.limit - usage.verbraucht) + " von " + fmt(usage.limit) + " Mahlzeiten-Fotos frei.</p>" : "")) +
         '<div class="ai-row">' +
-          '<label class="btn btn-soft" for="ai-file" role="button" style="text-align:center">' + (photo ? "Anderes Foto" : "Foto aufnehmen") + "</label>" +
+          (used ? "" : '<label class="btn btn-soft" for="ai-file" role="button" style="text-align:center">' + (photo ? "Anderes Foto" : "Foto aufnehmen") + "</label>") +
           '<button type="button" class="btn btn-soft" id="ai-text"' + (aiBusy ? " disabled" : "") + ">Aus Beschreibung schätzen</button>" +
         "</div>" +
-        '<input id="ai-file" class="visually-hidden" type="file" accept="image/*" capture="environment" tabindex="-1">' +
+        (used ? "" : '<input id="ai-file" class="visually-hidden" type="file" accept="image/*" capture="environment" tabindex="-1">') +
         (photo ? '<div class="ai-photo"><img src="' + photo.url + '" alt="Dein Foto"><span>' + (aiBusy ? "Foto wird ausgewertet …" : "Dein Foto") + '</span><button type="button" class="linkbtn" id="ai-photo-clear">Entfernen</button></div>' : "") +
         '<div class="field"><label for="m-desc">Beschreibung (optional)</label><textarea id="m-desc" data-draft="desc" placeholder="z. B. großer Teller, mit Sahnesoße, halb aufgegessen">' + esc(draft.desc || "") + "</textarea></div>" +
         (aiBusy ? '<p class="note" style="margin:0">Claude schätzt gerade …</p>' : "") +
@@ -760,62 +759,32 @@ svg text { font-family: var(--f-body); }
   }
   app.addEventListener("change", function (e) {
     if (e.target.id !== "ai-file" || !e.target.files || !e.target.files[0]) return;
-    shrinkImage(e.target.files[0]).then(function (ph) { photo = ph; analyze(true); })
+    shrinkImage(e.target.files[0]).then(function (ph) { ph.id = newId(); photo = ph; analyze(true); })
       .catch(function () { aiError = "Das Foto konnte nicht gelesen werden. Versuch es mit einem anderen Bild."; renderTracker(); });
   });
-  function aiErrText(status, body) {
-    var msg = body && body.error && body.error.message || "";
-    if (status === 401) return "Der Claude-Schlüssel ist ungültig. Prüf ihn in den Einstellungen (oben rechts).";
-    if (status === 400 && /credit|balance/i.test(msg)) return "Dein Guthaben bei Anthropic ist aufgebraucht. Lade es unter platform.claude.com → Guthaben auf.";
-    if (status === 429) return "Zu viele Anfragen in kurzer Zeit. Warte eine Minute und versuch es noch einmal.";
-    if (status === 529 || status >= 500) return "Claude ist gerade überlastet. Versuch es in ein paar Minuten noch einmal.";
-    return "Die Auswertung hat nicht geklappt (Fehler " + status + (msg ? ": " + msg : "") + ").";
-  }
   function analyze(withPhoto) {
     var desc = (draft.desc || "").trim(), name = (draft.name || "").trim();
     if (!withPhoto && !desc && !name) { aiError = "Beschreib kurz, was du gegessen hast, oder mach ein Foto."; renderTracker(); return; }
     aiBusy = true; aiError = ""; aiNote = ""; aiQuestion = ""; renderTracker();
-    var diet = LABELS.diet[state.diet] || "keine Angabe";
-    var system = "Du bist ein Ernährungscoach und schätzt Mahlzeiten für ein Kalorientagebuch. " +
-      "Schätze die Portion realistisch und gib Kalorien, Eiweiß, Kohlenhydrate und Fett für die gesamte gezeigte bzw. beschriebene Portion an. " +
-      "Antworte auf Deutsch. Die Person ernährt sich: " + diet + (state.avoid ? "; isst nicht: " + state.avoid : "") + ". " +
-      "Stell nur dann genau eine kurze Rückfrage, wenn eine Angabe die Schätzung stark verändern würde (z. B. Portionsgröße nicht erkennbar); gib trotzdem deine beste Schätzung ab. " +
-      "Ist auf dem Bild kein Essen zu sehen, setze alle Werte auf 0 und frag nach.";
-    var content = [];
-    if (withPhoto && photo) content.push({ type: "image", source: { type: "base64", media_type: photo.type, data: photo.data } });
-    var parts = [withPhoto && photo ? "Schätze die Mahlzeit auf dem Foto." : "Schätze diese Mahlzeit."];
-    if (name) parts.push("Name: " + name);
-    if (desc) parts.push("Hinweise von mir: " + desc);
-    content.push({ type: "text", text: parts.join("\n") });
-    fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": aiKey,
-        "anthropic-version": "2026-10-21",
-        "anthropic-beta": "server-side-fallback-2026-07-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify({
-        model: "claude-opus-5-5",
-        max_tokens: 16000,
-        fallbacks: "default",
-        system: system,
-        output_config: { format: { type: "json_schema", schema: MEAL_SCHEMA } },
-        messages: [{ role: "user", content: content }]
-      })
-    }).then(function (r) {
-      return r.json().catch(function () { return null; }).then(function (body) {
+    var body = {
+      geraet: deviceId, name: name, hinweise: desc,
+      ernaehrung: LABELS.diet[state.diet] || "keine Angabe", meidet: state.avoid || ""
+    };
+    if (withPhoto && photo) { body.bild = { type: photo.type, data: photo.data }; body.fotoId = photo.id; }
+    fetch(WORKER_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (d) {
         aiBusy = false;
-        if (!r.ok) { aiError = aiErrText(r.status, body); return; }
-        if (body.stop_reason === "refusal") { aiError = "Claude konnte dieses Bild nicht auswerten. Trag die Werte bitte von Hand ein."; return; }
-        var txt = (body.content || []).filter(function (b) { return b.type === "text"; }).map(function (b) { return b.text; }).join("");
-        var res; try { res = JSON.parse(txt); } catch (er) { aiError = "Die Antwort war unvollständig. Tippe auf „Neu schätzen“."; return; }
+        setUsage(d);
+        if (d && d.limitErreicht) { photo = null; return; }
+        if (!r.ok || !d) { aiError = (d && d.fehler) || "Die Auswertung hat nicht geklappt (Fehler " + r.status + ")."; return; }
+        if (d.abgelehnt) { aiError = "Claude konnte dieses Bild nicht auswerten. Trag die Werte bitte von Hand ein."; return; }
+        var res = d.ergebnis;
+        if (!res) { aiError = "Die Antwort war unvollständig. Tippe auf „Neu schätzen“."; return; }
         draft.name = res.name || draft.name;
         draft.kcal = Math.round(res.kcal); draft.p = Math.round(res.eiweiss_g); draft.c = Math.round(res.kohlenhydrate_g); draft.f = Math.round(res.fett_g);
         aiNote = res.annahme || ""; aiQuestion = (res.rueckfrage || "").trim();
       });
-    }).catch(function () { aiBusy = false; aiError = "Keine Verbindung zu Claude. Bist du online?"; })
+    }).catch(function () { aiBusy = false; aiError = "Keine Verbindung zur Foto-Auswertung. Bist du online?"; })
       .then(function () { if (state.view === "tracker" && !showSettings) renderTracker(); });
   }
 
@@ -955,7 +924,7 @@ svg text { font-family: var(--f-body); }
       '<section class="card fade"><div class="q-head"><span class="eyebrow">Verlauf</span><h2>Kalorien der letzten 7 Tage</h2></div><div class="chart">' + weekChart(selDay, P.kcal) + "</div>" +
         (isSunday ? "" : '<p class="note">Sonntags siehst du hier oben deinen Wochenrückblick mit einer Anpassung für die nächste Woche.</p>') + "</section>" +
       '<div class="nav"><button type="button" class="btn btn-ghost" id="toresult" style="flex:1">Mein Plan</button><button type="button" class="btn btn-ghost" id="edit" style="flex:1">Antworten ändern</button></div>' +
-      '<button type="button" class="btn btn-ghost" id="open-settings" style="width:100%">Einstellungen (Sicherung &amp; Claude-Schlüssel)</button>';
+      '<button type="button" class="btn btn-ghost" id="open-settings" style="width:100%">Einstellungen (Sicherung)</button>';
   }
 
   function render() {
@@ -965,6 +934,7 @@ svg text { font-family: var(--f-body); }
     else renderQuestion();
   }
   render();
+  loadUsage();
 })();
 </script>
 </body>

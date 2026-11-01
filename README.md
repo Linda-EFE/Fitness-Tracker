@@ -8,19 +8,15 @@ Eine kleine Web-App im Handy-Look, die ohne weitere Dienste läuft.
 2. **Plan:** Kalorien, Eiweiß, Kohlenhydrate und Fett pro Tag, die erwartete Veränderung pro Woche, das voraussichtliche Datum für dein Zielgewicht und drei persönliche Tipps.
 3. **Tracker:** ein großer Kalorien-Ring für den Tag, drei Ringe für Eiweiß, Kohlenhydrate und Fett, ein Tagebuch mit allen Mahlzeiten und ein 7-Tage-Verlauf. Einträge kannst du ändern und löschen, auch für vergangene Tage. Sonntags zeigt die App einen Wochenrückblick mit genau einer Anpassung für die nächste Woche.
 
-4. **Foto-Auswertung:** Foto aufnehmen oder kurz beschreiben, was du gegessen hast. Claude schätzt dann Portion, Kalorien und Makros, nennt seine Annahme und stellt bei Unsicherheit genau eine Rückfrage. Du prüfst die Werte und trägst sie ein.
+4. **Foto-Auswertung (Testversion):** Foto aufnehmen oder kurz beschreiben, was du gegessen hast. Claude schätzt dann Portion, Kalorien und Makros, nennt seine Annahme und stellt bei Unsicherheit genau eine Rückfrage. Du prüfst die Werte und trägst sie ein.
 
 Alles steckt in einer Datei: `index.html`.
 
-## Foto-Auswertung einrichten
+## Foto-Auswertung
 
-Die App nutzt dafür die Claude-Schnittstelle (API). Abgerechnet wird nach Nutzung, grob etwa 1 Cent pro Foto. Das Claude-Max-Abo enthält monatliches API-Guthaben, das du auf https://platform.claude.com einlösen kannst.
+Die Foto-Auswertung läuft über einen kleinen Cloudflare Worker, der den Claude-API-Schlüssel geheim aufbewahrt. Wer die App nutzt, braucht keinen eigenen Schlüssel. In der Testphase hat jedes Gerät 2 Mahlzeiten-Fotos, danach sind 100 geplant. Ist das Kontingent verbraucht, nennt die App die Kontaktadresse für die weitere Nutzung.
 
-1. Auf https://platform.claude.com anmelden und das Guthaben einlösen (oder unter **Guthaben** aufladen).
-2. Unter **API-Schlüssel** einen Schlüssel erstellen.
-3. In der App oben rechts die Einstellungen öffnen und den Schlüssel bei **Claude-Schlüssel** einfügen.
-
-Der Schlüssel bleibt nur im Browser des jeweiligen Geräts gespeichert. Die Foto-Auswertung ist freiwillig; ohne Schlüssel trägst du Mahlzeiten von Hand ein.
+Einrichtung und Limit: siehe [`worker/README.md`](worker/README.md).
 
 ## Wo die Daten liegen
 

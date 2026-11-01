@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fitness-Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one centred phone-width column; a sticky progress header, then one white card per question. */
+:root {
+  --bg: #EEF2EF;
+  --card: #FFFFFF;
+  --fg: #1C2723;
+  --muted: #5F6E68;
+  --line: #DCE4DF;
+  --soft: #F4F7F5;
+  --accent: #2C7A63;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E1F0EA;
+  --protein: #2C7A63;
+  --carbs: #D49A2A;
+  --fat: #6C7FD1;
+  --warn: #B54834;
+  --warn-soft: #FBEAE5;
+  --shadow: 0 1px 2px rgba(28,39,35,.05), 0 8px 24px rgba(28,39,35,.06);
+  --f-display: "Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+  --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r-card: 24px;
+  --r-ctl: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111715; --card: #1A2320; --fg: #E7EEEA; --muted: #9AABA4; --line: #2B3833; --soft: #212C28;
+    --accent: #5CC4A1; --accent-ink: #0D1F19; --accent-soft: #1F3A31;
+    --protein: #5CC4A1; --carbs: #E6B655; --fat: #95A5EC; --warn: #F08A74; --warn-soft: #3A221D;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111715; --card: #1A2320; --fg: #E7EEEA; --muted: #9AABA4; --line: #2B3833; --soft: #212C28;
+  --accent: #5CC4A1; --accent-ink: #0D1F19; --accent-soft: #1F3A31;
+  --protein: #5CC4A1; --carbs: #E6B655; --fat: #95A5EC; --warn: #F08A74; --warn-soft: #3A221D;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: 16px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+[hidden] { display: none !important; }
+.wrap {
+  max-width: 480px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 40px;
+}
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg); padding-block: 16px 14px;
+  display: grid; gap: 10px;
+}
+.toprow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; }
+.brand { font-family: var(--f-display); font-weight: 700; font-size: 18px; letter-spacing: -.01em; white-space: nowrap; }
+.syncpill {
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 99px; padding: 4px 10px;
+}
+.syncpill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--sync, var(--line)); }
+.syncpill[data-s="saved"] { --sync: var(--accent); }
+.syncpill[data-s="saving"], .syncpill[data-s="loading"] { --sync: var(--carbs); }
+.syncpill[data-s="error"] { --sync: var(--warn); color: var(--warn); }
+.topright { display: flex; align-items: center; gap: 10px; }
+.steps-howto { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.steps-howto b { color: var(--fg); }
+.stepcount { white-space: nowrap; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .35s ease; }
+
+.card {
+  background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow);
+  padding: 24px 20px; display: grid; gap: 18px;
+}
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1, h2 { font-family: var(--f-display); font-weight: 700; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+h1 { font-size: 26px; line-height: 1.15; }
+h2 { font-size: 19px; line-height: 1.25; }
+.q-head { display: grid; gap: 6px; }
+.lead { color: var(--muted); margin: 0; }
+.explain {
+  background: var(--soft); border-radius: var(--r-ctl); padding: 12px 14px;
+  font-size: 14px; color: var(--muted); margin: 0;
+}
+.explain b { color: var(--fg); font-weight: 600; }
+
+.options { display: grid; gap: 10px; }
+.opt {
+  font: inherit; color: var(--fg); text-align: left; cursor: pointer;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: var(--r-ctl);
+  padding: 14px 16px; display: grid; gap: 2px; transition: border-color .15s, background .15s;
+}
+.opt:hover { border-color: var(--accent); }
+.opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.opt .t { font-weight: 600; }
+.opt .s { font-size: 13.5px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: inherit; font-size: 14.5px; color: var(--fg); cursor: pointer;
+  border: 1.5px solid var(--line); background: var(--card); border-radius: 99px; padding: 8px 14px;
+}
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.grid4 .opt { text-align: center; padding: 14px 6px; }
+
+.field { display: grid; gap: 6px; }
+.field label { font-weight: 600; font-size: 14px; }
+.field .hint { font-size: 13px; color: var(--muted); }
+.inputwrap { position: relative; }
+input[type="text"], input[type="number"], input[type="password"], input[type="time"], textarea {
+  width: 100%; font: inherit; font-size: 18px; color: var(--fg);
+  background: var(--soft); border: 1.5px solid var(--line); border-radius: var(--r-ctl);
+  padding: 14px 16px; outline: none;
+}
+textarea { font-size: 16px; min-height: 84px; resize: vertical; }
+input:focus, textarea:focus { border-color: var(--accent); background: var(--card); }
+.unit { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+input[type="number"] { padding-right: 56px; font-variant-numeric: tabular-nums; }
+.error { background: var(--warn-soft); color: var(--warn); border-radius: var(--r-ctl); padding: 10px 14px; font-size: 14px; margin: 0; }
+
+.nav { display: flex; gap: 10px; }
+.btn {
+  font: inherit; font-weight: 600; cursor: pointer; border-radius: var(--r-ctl);
+  padding: 14px 18px; border: 1.5px solid transparent; min-height: 50px; white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); flex: 1; }
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+.btn-ghost:hover { border-color: var(--muted); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Result */
+.stack { display: grid; gap: 14px; }
+.kcal { display: grid; gap: 2px; }
+.kcal .num { font-family: var(--f-display); font-weight: 700; font-size: 56px; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.kcal .num small { font-size: 20px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.split { display: flex; height: 12px; border-radius: 99px; overflow: hidden; gap: 3px; }
+.split i { display: block; height: 100%; }
+.macros { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+.macro { background: var(--soft); border-radius: 16px; padding: 12px; display: grid; gap: 2px; min-width: 0; }
+.macro .lbl { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.macro .lbl::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.macro .g { font-family: var(--f-display); font-weight: 700; font-size: 26px; font-variant-numeric: tabular-nums; }
+.macro .g small { font-size: 14px; font-weight: 500; color: var(--muted); }
+.macro .sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.fact { border: 1.5px solid var(--line); border-radius: 16px; padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.fact .lbl { font-size: 13px; color: var(--muted); }
+.fact .v { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+.fact .sub { font-size: 12.5px; color: var(--muted); }
+.tips { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; counter-reset: tip; }
+.tips li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.tips li::before {
+  counter-increment: tip; content: counter(tip);
+  width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+  font-weight: 700; font-size: 14px; display: grid; place-items: center;
+}
+.tips li span { min-width: 0; }
+details.calc { font-size: 14px; color: var(--muted); }
+details.calc summary { cursor: pointer; font-weight: 600; color: var(--fg); }
+details.calc table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+details.calc td { padding: 6px 0; border-bottom: 1px solid var(--line); }
+details.calc td:last-child { text-align: right; color: var(--fg); }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* Tracker */
+.dayhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dayhead h1 { font-size: 22px; text-align: center; flex: 1; }
+.iconbtn { font: inherit; font-size: 20px; line-height: 1; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; flex: none; }
+.iconbtn:disabled { opacity: .35; cursor: not-allowed; }
+.ringbig { display: grid; place-items: center; }
+.ringbig svg { width: 200px; height: 200px; max-width: 100%; }
+.rings3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; text-align: center; }
+.rings3 svg { width: 84px; height: 84px; max-width: 100%; }
+.rings3 .lbl { font-size: 13px; font-weight: 600; }
+.rings3 .sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+svg text { font-family: var(--f-body); }
+.chart svg { width: 100%; height: auto; display: block; }
+.meals { list-style: none; margin: 0; padding: 0; display: grid; }
+.meal { display: grid; grid-template-columns: 48px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.meal:last-child { border-bottom: 0; }
+.meal .time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meal .nm { font-weight: 600; overflow-wrap: anywhere; }
+.meal .mac { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meal .kc { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.meal .acts { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+.linkbtn { font: inherit; font-size: 13px; color: var(--accent); background: none; border: 0; padding: 2px 4px; cursor: pointer; font-weight: 600; }
+.linkbtn.danger { color: var(--warn); }
+.empty { color: var(--muted); font-size: 14px; margin: 0; padding: 8px 0; }
+.formgrid { display: grid; grid-template-columns: 128px minmax(0,1fr); gap: 10px; }
+.macgrid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.macgrid input, .formgrid input { font-size: 16px; padding: 12px; }
+.macgrid input[type="number"] { padding-right: 12px; }
+.macgrid label, .formgrid label { font-size: 13px; }
+.review { display: grid; gap: 10px; }
+.ai { display: grid; gap: 10px; background: var(--soft); border-radius: 16px; padding: 14px; }
+.ai-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ai-row .btn { flex: 1 1 130px; min-height: 46px; padding: 10px 14px; white-space: normal; line-height: 1.25; display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+.btn-soft { background: var(--accent-soft); color: var(--fg); border-color: var(--accent-soft); }
+.btn-soft:hover { border-color: var(--accent); }
+.ai textarea { min-height: 60px; font-size: 15px; padding: 10px 12px; }
+.ai-photo { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--muted); }
+.ai-photo img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; flex: none; }
+.ai-result { background: var(--card); border: 1.5px solid var(--accent); border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 0; }
+.ai-q { background: var(--card); border: 1.5px solid var(--carbs); border-radius: 12px; padding: 10px 12px; font-size: 14px; margin: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.review .facts .v { font-size: 17px; }
+@media (max-width: 380px) { .macgrid { grid-template-columns: repeat(2, minmax(0,1fr)); } .formgrid { grid-template-columns: 1fr; } }
+
+.fade { animation: fade .28s ease both; }
+@keyframes fade { from { opacity: .4; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .fade { animation: none; } .bar > i { transition: none; } }
+@media (max-width: 380px) {
+  .grid4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .macros { gap: 6px; } .macro { padding: 10px 8px; } .macro .g { font-size: 22px; }
+  .kcal .num { font-size: 48px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="toprow">
+      <span class="brand">Fitness-Tracker</span>
+      <span class="topright"><span class="stepcount" id="stepcount"></span><button type="button" class="syncpill" id="syncbtn" data-s="saved" title="Daten bleiben auf diesem Gerät · Einstellungen öffnen">Nur auf diesem Gerät</button></span>
+    </div>
+    <div class="bar" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" id="bar"><i id="barfill"></i></div>
+  </header>
+  <main id="app" aria-live="polite"></main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var STORE_KEY = "fitnesstracker-v1";
+  var app = document.getElementById("app");
+  var barfill = document.getElementById("barfill");
+  var bar = document.getElementById("bar");
+  var stepcount = document.getElementById("stepcount");
+
+  var state = {
+    name: "", age: "", sex: "", height: "", weight: "", goal: "", target: "",
+    daily: "", sportFreq: "", sportTypes: "", tempo: "", diet: "",
+    avoid: "", health: "", meals: "", weak: [], weakNote: "",
+    view: "q", step: 0, plan: null, log: {}
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    if (saved && typeof saved === "object") Object.assign(state, saved);
+  } catch (e) {}
+  function saveLocal() { state.updatedAt = Date.now(); try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }
+  function save() { saveLocal(); }
+
+  /* ---------- Nur lokal speichern ---------- */
+  var showSettings = false, settingsMsg = "", settingsOk = "";
+  var syncbtn = document.getElementById("syncbtn");
+  syncbtn.addEventListener("click", function () { showSettings = true; settingsMsg = settingsOk = ""; render(); window.scrollTo(0, 0); });
+  function exportData() {
+    var json = JSON.stringify({ app: "fitnesstracker", version: 1, gespeichert: new Date().toISOString(), state: state }, null, 2) + "\n";
+    var blob = new Blob([json], { type: "application/json" });
+    var file = "fitness-tracker-sicherung-" + dayKey(new Date()) + ".json";
+    try {
+      var f = new File([blob], file, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: "Fitness-Tracker Sicherung" }).catch(function () {}); return; }
+    } catch (e) {}
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file;
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function importData(file) {
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var d = JSON.parse(r.result), st = d && d.state;
+        if (!st || typeof st !== "object" || !("log" in st)) throw 0;
+        Object.assign(state, st); saveLocal();
+        settingsMsg = ""; settingsOk = "Sicherung geladen.";
+      } catch (e) { settingsOk = ""; settingsMsg = "Diese Datei ist keine gültige Sicherung des Fitness-Trackers."; }
+      renderSettings();
+    };
+    r.readAsText(file);
+  }
+  app.addEventListener("change", function (e) {
+    if (e.target.id === "data-file" && e.target.files && e.target.files[0]) {
+      if (confirm("Die Sicherung ersetzt die Daten auf diesem Gerät. Fortfahren?")) importData(e.target.files[0]);
+      e.target.value = "";
+    }
+  });
+
+  function renderSettings() {
+    setProgress(0, 1, "");
+    app.innerHTML =
+      '<form class="card fade" id="syncform" novalidate>' +
+        '<div class="q-head"><span class="eyebrow">Einstellungen</span><h1>Deine Daten</h1>' +
+        '<p class="lead">Alles bleibt nur auf diesem Gerät, in diesem Browser. Es gibt kein Konto und keinen Server.</p></div>' +
+        (settingsMsg ? '<p class="error" role="alert">' + esc(settingsMsg) + "</p>" : "") +
+        (settingsOk ? '<p class="note" role="status"><b>' + esc(settingsOk) + "</b></p>" : "") +
+        '<div class="explain"><b>Gut zu wissen</b><ol class="steps-howto" style="margin-top:8px">' +
+          "<li>Löschst du die Website-Daten im Browser oder die App vom Home-Bildschirm, sind deine Einträge weg.</li>" +
+          "<li>Am iPhone: Safari öffnen, auf <b>Teilen → Zum Home-Bildschirm</b> tippen. Dann startet der Tracker wie eine App.</li>" +
+          "<li>Mach ab und zu eine Sicherung. Damit kannst du deine Daten auch auf ein neues Gerät mitnehmen.</li>" +
+        "</ol></div>" +
+        '<button type="button" class="btn btn-ghost" id="data-export" style="width:100%">Sicherung speichern</button>' +
+        '<button type="button" class="btn btn-ghost" id="data-import" style="width:100%">Sicherung laden</button>' +
+        '<input type="file" id="data-file" accept="application/json,.json" hidden>' +
+        '<div class="q-head" style="margin-top:8px"><span class="eyebrow">Foto-Auswertung</span><h2>Claude-Schlüssel</h2>' +
+        '<p class="lead">Damit schätzt die App Kalorien und Makros aus einem Foto oder einer kurzen Beschreibung.</p></div>' +
+        '<div class="explain"><b>Einmalig: API-Schlüssel anlegen</b><ol class="steps-howto" style="margin-top:8px">' +
+          "<li>Auf <b>platform.claude.com</b> anmelden. Mit einem Claude-Max-Abo kannst du dort monatliches API-Guthaben einlösen, sonst lädst du unter <b>Guthaben</b> etwas auf (abgerechnet wird pro Foto).</li>" +
+          "<li>Unter <b>API-Schlüssel</b> einen neuen Schlüssel erstellen, Name z. B. „Fitness-Tracker“.</li>" +
+          "<li>Schlüssel kopieren und hier einfügen.</li>" +
+        "</ol></div>" +
+        '<div class="field"><label for="c-key">API-Schlüssel</label><span class="hint">Bleibt nur auf diesem Gerät gespeichert.</span>' +
+          '<input id="c-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="' + esc(aiKey) + '"></div>' +
+        '<div class="nav"><button type="button" class="btn btn-ghost" id="sync-cancel">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>' +
+      "</form>";
+  }
+
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function num(v) { var n = parseFloat(String(v).replace(",", ".")); return isFinite(n) ? n : NaN; }
+  function fmt(n, d) { return Number(n).toLocaleString("de-DE", { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }); }
+  function nameOr(fallback) { return state.name ? esc(state.name) : fallback; }
+
+  /* ---------- Fragen ---------- */
+  var LABELS = {
+    sex: { w: "weiblich", m: "männlich" },
+    goal: { ab: "abnehmen", halten: "Gewicht halten", muskel: "Muskeln aufbauen" },
+    daily: { sitz: "überwiegend sitzend", beine: "viel auf den Beinen", arbeit: "körperliche Arbeit" },
+    sportFreq: { "0": "gar nicht", "1-2": "1–2 Mal pro Woche", "3-4": "3–4 Mal pro Woche", "5+": "5 Mal oder mehr pro Woche" },
+    tempo: { entspannt: "entspannt", normal: "normal", ehrgeizig: "ehrgeizig" },
+    diet: { alles: "isst alles", eiweiss: "eiweißreich", lowcarb: "low carb", vegetarisch: "vegetarisch", vegan: "vegan" },
+    weak: { morgens: "morgens", nachmittags: "nachmittags", abends: "abends Snacks", nachts: "spät nachts", stress: "bei Stress", unterwegs: "unterwegs", wochenende: "am Wochenende" }
+  };
+
+  var STEPS = [
+    { id: "name", eyebrow: "Kennenlernen", title: "Wie heißt du?", lead: "Dein Vorname reicht. So kann ich dich direkt ansprechen.",
+      render: function () { return textField("name", "Vorname", "z. B. Alex", "text"); },
+      valid: function () { return state.name.trim().length > 0 ? "" : "Bitte gib deinen Vornamen ein."; } },
+    { id: "age", eyebrow: "Über dich", title: function () { return "Wie alt bist du, " + nameOr("du") + "?"; }, lead: "Mit dem Alter sinkt der Energiebedarf ein wenig. Darum brauche ich es für die Rechnung.",
+      render: function () { return numField("age", "Alter", "Jahre", "z. B. 34"); },
+      valid: function () { var a = num(state.age); if (!(a >= 14 && a <= 100)) return "Bitte gib ein Alter zwischen 14 und 100 Jahren ein."; return ""; },
+      warn: function () { return num(state.age) < 18 ? "Unter 18 wächst der Körper noch. Bitte besprich einen Kalorienplan mit deiner Ärztin oder deinem Arzt." : ""; } },
+    { id: "sex", eyebrow: "Über dich", title: "Welches Geschlecht soll ich für die Rechnung nehmen?", lead: "Das brauche ich nur für die Grundumsatz-Formel.",
+      explain: "<b>Grundumsatz</b> ist die Energie, die dein Körper in völliger Ruhe verbraucht, etwa für Atmung, Herz und Gehirn. Die Formel rechnet für Männer und Frauen leicht unterschiedlich.",
+      render: function () { return options("sex", [["w", "weiblich", ""], ["m", "männlich", ""]], "grid2"); },
+      valid: function () { return state.sex ? "" : "Bitte wähle eine Option."; } },
+    { id: "height", eyebrow: "Körper", title: "Wie groß bist du?", lead: "In Zentimetern, ohne Schuhe.",
+      render: function () { return numField("height", "Größe", "cm", "z. B. 168"); },
+      valid: function () { var h = num(state.height); return h >= 120 && h <= 230 ? "" : "Bitte gib eine Größe zwischen 120 und 230 cm ein."; } },
+    { id: "weight", eyebrow: "Körper", title: "Wie viel wiegst du aktuell?", lead: "Am besten morgens nach dem Aufstehen gewogen. Ein ungefährer Wert ist auch okay.",
+      render: function () { return numField("weight", "Aktuelles Gewicht", "kg", "z. B. 72", "0.1"); },
+      valid: function () { var w = num(state.weight); return w >= 35 && w <= 300 ? "" : "Bitte gib ein Gewicht zwischen 35 und 300 kg ein."; } },
+    { id: "goal", eyebrow: "Ziel", title: "Was möchtest du erreichen?", lead: "Wähle das Ziel, das dir gerade am wichtigsten ist.",
+      render: function () { return options("goal", [["ab", "Abnehmen", "Körperfett verlieren, Schritt für Schritt"], ["halten", "Gewicht halten", "Gesund essen, ohne zu- oder abzunehmen"], ["muskel", "Muskeln aufbauen", "Kraft und Muskeln gewinnen, mit einem kleinen Plus an Energie"]]); },
+      valid: function () { return state.goal ? "" : "Bitte wähle ein Ziel."; } },
+    { id: "target", eyebrow: "Ziel", title: "Was ist dein Zielgewicht?", lead: function () { return state.goal === "ab" ? "Ein realistisches Ziel motiviert mehr als ein perfektes. Du kannst es später anpassen." : "Wie viel möchtest du am Ende ungefähr wiegen?"; },
+      skip: function () { return state.goal === "halten"; },
+      render: function () { return numField("target", "Zielgewicht", "kg", "z. B. 65", "0.1"); },
+      valid: function () {
+        var t = num(state.target), w = num(state.weight), h = num(state.height) / 100;
+        if (!(t >= 35 && t <= 300)) return "Bitte gib ein Zielgewicht zwischen 35 und 300 kg ein.";
+        if (state.goal === "ab" && t >= w) return "Zum Abnehmen sollte das Zielgewicht unter deinem aktuellen Gewicht (" + fmt(w, 1) + " kg) liegen.";
+        if (state.goal === "muskel" && t <= w) return "Zum Muskelaufbau sollte das Zielgewicht über deinem aktuellen Gewicht (" + fmt(w, 1) + " kg) liegen.";
+        if (state.goal === "ab" && t / (h * h) < 18.5) return "Dieses Ziel läge unter einem BMI von 18,5 und damit im Untergewicht. Bitte wähle mindestens " + fmt(Math.ceil(18.5 * h * h), 0) + " kg.";
+        if (state.goal === "muskel" && t - w > 25) return "Das ist sehr viel auf einmal. Setz dir lieber ein Zwischenziel von höchstens " + fmt(w + 25, 0) + " kg.";
+        return "";
+      } },
+    { id: "daily", eyebrow: "Alltag", title: "Wie sieht dein normaler Tag aus?", lead: "Gemeint ist Arbeit und Alltag, ohne Sport.",
+      explain: "Daraus ergibt sich dein <b>Aktivitätsfaktor</b>: eine Zahl, mit der ich deinen Grundumsatz multipliziere, um deinen Bedarf an einem echten Tag zu schätzen.",
+      render: function () { return options("daily", [["sitz", "Überwiegend sitzend", "Büro, Homeoffice, viel Auto oder Bahn"], ["beine", "Viel auf den Beinen", "Verkauf, Pflege, Lehrkraft, Events, viel zu Fuß"], ["arbeit", "Körperliche Arbeit", "Bau, Handwerk, Lager, schwer tragen"]]); },
+      valid: function () { return state.daily ? "" : "Bitte wähle eine Option."; } },
+    { id: "sport", eyebrow: "Bewegung", title: "Wie oft machst du Sport pro Woche?", lead: "Zähl alles, was dich ins Schwitzen bringt.",
+      render: function () {
+        return options("sportFreq", [["0", "gar nicht", ""], ["1-2", "1–2 Mal", ""], ["3-4", "3–4 Mal", ""], ["5+", "5+ Mal", ""]], "grid4") +
+          (state.sportFreq && state.sportFreq !== "0" ? textField("sportTypes", "Welche Sportarten?", "z. B. Joggen, Krafttraining, Yoga", "text", "Optional, hilft mir bei den Tipps.") : "");
+      },
+      valid: function () { return state.sportFreq ? "" : "Bitte wähle aus, wie oft du Sport machst."; } },
+    { id: "tempo", eyebrow: "Tempo", title: "Wie schnell soll es gehen?", lead: "Langsamer ist leichter durchzuhalten. Du kannst das Tempo jederzeit ändern.",
+      skip: function () { return state.goal === "halten"; },
+      render: function () {
+        var ab = state.goal === "ab";
+        return options("tempo", [
+          ["entspannt", "Entspannt", ab ? "ca. 0,25 kg pro Woche, kaum Verzicht" : "kleines Plus, kaum Fettzunahme"],
+          ["normal", "Normal", ab ? "ca. 0,5 kg pro Woche, gut machbar" : "solides Plus, guter Mittelweg"],
+          ["ehrgeizig", "Ehrgeizig", ab ? "bis 0,75 kg pro Woche, braucht Disziplin" : "größeres Plus, schneller, aber mehr Fett"]
+        ]);
+      },
+      valid: function () { return state.tempo ? "" : "Bitte wähle ein Tempo."; } },
+    { id: "diet", eyebrow: "Essen", title: "Wie isst du am liebsten?", lead: "Ich passe die Verteilung der Nährstoffe daran an.",
+      explain: "<b>Eiweiß</b> (Protein) baut Muskeln und macht lange satt. <b>Low Carb</b> heißt: wenig Kohlenhydrate wie Brot, Nudeln, Reis und Zucker, dafür mehr Fett und Eiweiß.",
+      render: function () { return options("diet", [["alles", "Ich esse alles", "Keine besonderen Vorlieben"], ["eiweiss", "Eiweißreich", "Viel Fleisch, Fisch, Eier, Quark oder Hülsenfrüchte"], ["lowcarb", "Low Carb", "Wenig Brot, Nudeln, Reis und Zucker"], ["vegetarisch", "Vegetarisch", "Kein Fleisch und kein Fisch"], ["vegan", "Vegan", "Keine tierischen Produkte"]]); },
+      valid: function () { return state.diet ? "" : "Bitte wähle eine Ernährungsweise."; } },
+    { id: "avoid", eyebrow: "Essen", title: "Gibt es etwas, das du nicht isst?", lead: "Beides ist optional. Du kannst auch einfach auf „Weiter“ tippen.",
+      render: function () {
+        return textArea("avoid", "Lebensmittel, die ich nicht esse", "z. B. Pilze, Laktose, Nüsse") +
+          textArea("health", "Hinweise zur Gesundheit", "z. B. Schilddrüse, Diabetes, Schwangerschaft, Medikamente", "Ich stelle keine Diagnosen. Wenn du etwas angibst, empfehle ich dir, den Plan mit deiner Ärztin oder deinem Arzt abzusprechen.");
+      },
+      valid: function () { return ""; } },
+    { id: "meals", eyebrow: "Rhythmus", title: "Wie isst du über den Tag?", lead: "Damit ich den Plan auf deinen Rhythmus verteile.",
+      render: function () {
+        return '<div class="field"><label>Mahlzeiten pro Tag</label>' + options("meals", [["2", "2", ""], ["3", "3", ""], ["4", "4", ""], ["5", "5+", ""]], "grid4") + "</div>" +
+          '<div class="field"><label>Wann wirst du am ehesten schwach?</label><span class="hint">Mehrfachauswahl möglich</span>' + chips("weak", LABELS.weak) + "</div>" +
+          textField("weakNote", "Noch etwas dazu?", "z. B. Schokolade nach der Arbeit", "text", "Optional");
+      },
+      valid: function () { return state.meals ? "" : "Bitte wähle, wie viele Mahlzeiten du am Tag isst."; } }
+  ];
+
+  function val(f) { return typeof f === "function" ? f() : f; }
+  function visibleSteps() { return STEPS.filter(function (s) { return !(s.skip && s.skip()); }); }
+
+  /* ---------- Bausteine ---------- */
+  function textField(key, label, ph, type, hint) {
+    return '<div class="field"><label for="f-' + key + '">' + label + "</label>" +
+      (hint ? '<span class="hint">' + hint + "</span>" : "") +
+      '<input id="f-' + key + '" data-key="' + key + '" type="text" autocomplete="off" placeholder="' + esc(ph) + '" value="' + esc(state[key]) + '"></div>';
+  }
+  function numField(key, label, unit, ph, step) {
+    return '<div class="field"><label for="f-' + key + '">' + label + '</label><div class="inputwrap">' +
+      '<input id="f-' + key + '" data-key="' + key + '" type="number" inputmode="decimal" step="' + (step || "1") + '" placeholder="' + esc(ph) + '" value="' + esc(state[key]) + '">' +
+      '<span class="unit">' + unit + "</span></div></div>";
+  }
+  function textArea(key, label, ph, hint) {
+    return '<div class="field"><label for="f-' + key + '">' + label + "</label>" + (hint ? '<span class="hint">' + hint + "</span>" : "") +
+      '<textarea id="f-' + key + '" data-key="' + key + '" placeholder="' + esc(ph) + '">' + esc(state[key]) + "</textarea></div>";
+  }
+  function options(key, list, cls) {
+    return '<div class="options ' + (cls || "") + '" role="group">' + list.map(function (o) {
+      return '<button type="button" class="opt" data-opt="' + key + '" data-val="' + o[0] + '" aria-pressed="' + (String(state[key]) === o[0]) + '">' +
+        '<span class="t">' + o[1] + "</span>" + (o[2] ? '<span class="s">' + o[2] + "</span>" : "") + "</button>";
+    }).join("") + "</div>";
+  }
+  function chips(key, map) {
+    return '<div class="chips" role="group">' + Object.keys(map).map(function (k) {
+      return '<button type="button" class="chip" data-chip="' + key + '" data-val="' + k + '" aria-pressed="' + (state[key].indexOf(k) >= 0) + '">' + map[k] + "</button>";
+    }).join("") + "</div>";
+  }
+
+  /* ---------- Interview rendern ---------- */
+  var errorMsg = "";
+  function renderQuestion() {
+    var steps = visibleSteps();
+    if (state.step >= steps.length) state.step = steps.length - 1;
+    if (state.step < 0) state.step = 0;
+    var s = steps[state.step];
+    setProgress(state.step + 1, steps.length + 1, "Frage " + (state.step + 1) + " von " + steps.length);
+    var warn = s.warn ? s.warn() : "";
+    app.innerHTML =
+      '<form class="card fade" id="qform" novalidate>' +
+        '<div class="q-head"><span class="eyebrow">' + s.eyebrow + "</span><h1>" + val(s.title) + "</h1>" +
+        (s.lead ? '<p class="lead">' + val(s.lead) + "</p>" : "") + "</div>" +
+        (s.explain ? '<p class="explain">' + s.explain + "</p>" : "") +
+        '<div class="stack" id="fields">' + s.render() + "</div>" +
+        (errorMsg ? '<p class="error" role="alert">' + esc(errorMsg) + "</p>" : "") +
+        (warn && !errorMsg ? '<p class="explain">' + esc(warn) + "</p>" : "") +
+        '<div class="nav">' +
+          '<button type="button" class="btn btn-ghost" id="back"' + (state.step === 0 ? " disabled" : "") + ">Zurück</button>" +
+          '<button type="submit" class="btn btn-primary" id="next">' + (state.step === steps.length - 1 ? "Plan berechnen" : "Weiter") + "</button>" +
+        "</div>" +
+      "</form>";
+    var first = app.querySelector("input,textarea");
+    if (first && !first.value) { try { first.focus({ preventScroll: true }); } catch (e) {} }
+  }
+
+  function setProgress(i, n, label) {
+    var pct = Math.round((i / n) * 100);
+    barfill.style.width = pct + "%";
+    bar.setAttribute("aria-valuenow", pct);
+    stepcount.textContent = label;
+  }
+
+  app.addEventListener("input", function (e) {
+    var k = e.target.getAttribute("data-key");
+    if (k) { state[k] = e.target.value; saveLocal(); }
+    var dk = e.target.getAttribute("data-draft");
+    if (dk) draft[dk] = e.target.value;
+  });
+  app.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-opt]");
+    if (b) {
+      var key = b.getAttribute("data-opt");
+      state[key] = b.getAttribute("data-val");
+      if (key === "goal") { state.target = state.goal === "halten" ? "" : state.target; }
+      errorMsg = ""; save(); renderQuestion();
+      return;
+    }
+    var c = e.target.closest("[data-chip]");
+    if (c) {
+      var ck = c.getAttribute("data-chip"), v = c.getAttribute("data-val");
+      var arr = state[ck].slice(), at = arr.indexOf(v);
+      if (at >= 0) arr.splice(at, 1); else arr.push(v);
+      state[ck] = arr; save();
+      c.setAttribute("aria-pressed", String(arr.indexOf(v) >= 0));
+      return;
+    }
+    if (e.target.id === "sync-cancel") { showSettings = false; render(); return; }
+    if (e.target.id === "data-export") { exportData(); return; }
+    if (e.target.id === "data-import") { document.getElementById("data-file").click(); return; }
+    if (e.target.id === "back") { errorMsg = ""; state.step--; save(); renderQuestion(); return; }
+    if (e.target.id === "edit") { state.view = "q"; state.step = 0; errorMsg = ""; save(); render(); return; }
+    if (e.target.id === "confirm") {
+      var rc = calc();
+      state.plan = { kcal: rc.kcal, protein: rc.protein, carbs: rc.carbs, fat: rc.fat, confirmed: dayKey(new Date()) };
+      state.view = "tracker"; selDay = dayKey(new Date()); save(); render(); window.scrollTo(0, 0); return;
+    }
+    if (e.target.id === "toresult") { state.view = "result"; save(); render(); window.scrollTo(0, 0); return; }
+    if (e.target.id === "totracker") { state.view = "tracker"; save(); render(); window.scrollTo(0, 0); return; }
+    if (e.target.id === "day-prev") { selDay = shiftDay(selDay, -1); editingId = null; renderTracker(); return; }
+    if (e.target.id === "day-next") { selDay = shiftDay(selDay, 1); editingId = null; renderTracker(); return; }
+    if (e.target.id === "meal-cancel") { editingId = null; draft = {}; resetAi(); renderTracker(); return; }
+    if (e.target.id === "ai-text") { analyze(false); return; }
+    if (e.target.id === "ai-again") { analyze(!!photo); return; }
+    if (e.target.id === "ai-photo-clear") { photo = null; aiNote = ""; aiQuestion = ""; renderTracker(); return; }
+    if (e.target.id === "open-settings") { showSettings = true; settingsMsg = settingsOk = ""; render(); window.scrollTo(0, 0); return; }
+    if (e.target.id === "ai-setup") { showSettings = true; settingsMsg = settingsOk = ""; render(); window.scrollTo(0, 0); setTimeout(function () { var k = document.getElementById("c-key"); if (k) k.scrollIntoView({ block: "center" }); }, 50); return; }
+    var mb = e.target.closest("[data-meal]");
+    if (mb) {
+      var act = mb.getAttribute("data-act"), id = mb.getAttribute("data-meal");
+      var m = (state.log[selDay] || []).filter(function (x) { return x.id === id; })[0];
+      if (!m) return;
+      if (act === "edit") { editingId = id; draft = { time: m.time, name: m.name, kcal: m.kcal, p: m.p, c: m.c, f: m.f }; renderTracker(); document.getElementById("m-name").focus(); }
+      if (act === "del") { m.deleted = true; m.updatedAt = Date.now(); if (editingId === id) { editingId = null; draft = {}; } save(); renderTracker(); }
+      if (act === "again") { draft = { time: nowTime(), name: m.name, kcal: m.kcal, p: m.p, c: m.c, f: m.f }; editingId = null; selDay = dayKey(new Date()); renderTracker(); document.getElementById("m-name").focus(); }
+      return;
+    }
+  });
+  app.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (e.target.id === "syncform") {
+      aiKey = document.getElementById("c-key").value.trim();
+      try { localStorage.setItem(AI_KEY, aiKey); } catch (er) {}
+      showSettings = false; render(); window.scrollTo(0, 0);
+      return;
+    }
+    if (e.target.id === "mealform") { saveMeal(); return; }
+    var steps = visibleSteps(), s = steps[state.step];
+    var msg = s.valid();
+    if (msg) { errorMsg = msg; renderQuestion(); return; }
+    errorMsg = "";
+    if (state.step < steps.length - 1) { state.step++; save(); renderQuestion(); }
+    else { state.view = "result"; save(); render(); window.scrollTo(0, 0); }
+  });
+
+  /* ---------- Rechnung ---------- */
+  function calc() {
+    var w = num(state.weight), h = num(state.height), a = num(state.age);
+    var female = state.sex === "w";
+    var bmr = 10 * w + 6.25 * h - 5 * a + (female ? -161 : 5);
+    var base = { sitz: 1.2, beine: 1.375, arbeit: 1.55 }[state.daily] || 1.2;
+    var plus = { "0": 0, "1-2": 0.1, "3-4": 0.2, "5+": 0.3 }[state.sportFreq] || 0;
+    var factor = Math.min(1.9, base + plus);
+    var tdee = bmr * factor;
+    var floor = female ? 1200 : 1500;
+    var goal = state.goal, tempo = state.tempo || "normal";
+    var kcal, weekly = 0, floored = false, note = "";
+
+    if (goal === "ab") {
+      var wish = { entspannt: 0.25, normal: 0.5, ehrgeizig: 0.75 }[tempo];
+      wish = Math.min(wish, 0.75);
+      kcal = tdee - wish * 7700 / 7;
+      if (kcal < floor) { kcal = floor; floored = true; }
+      kcal = Math.round(kcal / 10) * 10;
+      weekly = Math.max(0, Math.min(0.75, (tdee - kcal) * 7 / 7700));
+      if (floored && weekly <= 0.05) note = "Dein Bedarf liegt schon nahe am Mindestwert von " + fmt(floor) + " kcal. Weniger zu essen wäre nicht gesund. Mehr Bewegung im Alltag ist hier dein größter Hebel.";
+      else if (floored) note = "Ich habe dein Ziel auf den Mindestwert von " + fmt(floor) + " kcal angehoben. Deshalb geht es etwas langsamer als gewünscht.";
+    } else if (goal === "muskel") {
+      var surplus = { entspannt: 150, normal: 250, ehrgeizig: 400 }[tempo];
+      kcal = Math.round((tdee + surplus) / 10) * 10;
+      if (kcal < floor) kcal = floor;
+      weekly = (kcal - tdee) * 7 / 7700;
+    } else {
+      kcal = Math.round(tdee / 10) * 10;
+      if (kcal < floor) { kcal = floor; note = "Ich habe den Mindestwert von " + fmt(floor) + " kcal angesetzt."; }
+      weekly = 0;
+    }
+
+    // Eiweiß: 1,6–2 g/kg. Bei hohem BMI rechne ich mit einem angepassten Gewicht (BMI 25), damit die Menge realistisch bleibt.
+    var hm = h / 100, bmi = w / (hm * hm);
+    var refW = bmi > 30 ? Math.max(25 * hm * hm, num(state.target) || 0) : w;
+    refW = Math.min(refW, w);
+    var pPerKg = { ab: 1.8, halten: 1.6, muskel: 2.0 }[goal] || 1.6;
+    if (state.diet === "eiweiss" || state.diet === "lowcarb") pPerKg = Math.min(2.0, pPerKg + 0.2);
+    var protein = Math.round(refW * pPerKg);
+    var fatMin = 0.8 * w;
+    var fat;
+    if (state.diet === "lowcarb") {
+      var carbsLC = Math.max(80, Math.round(kcal * 0.2 / 4));
+      fat = Math.max(fatMin, (kcal - protein * 4 - carbsLC * 4) / 9);
+    } else {
+      fat = Math.max(fatMin, kcal * 0.28 / 9);
+    }
+    fat = Math.round(fat);
+    var carbs = Math.round((kcal - protein * 4 - fat * 9) / 4);
+    if (carbs < 50) { // Fett aufs Minimum, Eiweiß auf 1,6 g/kg, damit genug Kohlenhydrate bleiben
+      fat = Math.round(fatMin);
+      protein = Math.round(refW * 1.6);
+      carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+    }
+
+    var weeks = null, date = null, diff = null;
+    if (goal !== "halten") {
+      diff = Math.abs(num(state.target) - w);
+      if (weekly > 0.01) {
+        weeks = diff / weekly;
+        date = new Date(); date.setDate(date.getDate() + Math.round(weeks * 7));
+      }
+    }
+    return { bmr: bmr, factor: factor, tdee: tdee, kcal: kcal, floor: floor, weekly: weekly, protein: protein, fat: fat, carbs: carbs,
+      weeks: weeks, date: date, diff: diff, note: note, refW: refW, bmi: bmi, pPerKg: protein / refW };
+  }
+
+  function fmtDate(d) { return d ? d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" }) : "–"; }
+  function weeklyText(r) {
+    if (state.goal === "halten") return "± 0 kg";
+    var sign = state.goal === "ab" ? "−" : "+";
+    return sign + " " + fmt(r.weekly, 2).replace(/0$/, "") + " kg";
+  }
+
+  /* ---------- Tipps ---------- */
+  function tips(r) {
+    var out = [];
+    var veg = state.diet === "vegan", vegi = state.diet === "vegetarisch";
+    var meals = parseInt(state.meals, 10) || 3;
+    var snack = veg ? "Sojajoghurt mit Beeren oder eine Handvoll Edamame" : vegi ? "Skyr mit Beeren oder Hüttenkäse mit Gurke" : "Skyr mit Beeren oder ein paar Scheiben Putenbrust";
+    if (state.health.trim()) out.push("Du hast gesundheitliche Hinweise angegeben. Bitte sprich den Plan mit deiner Ärztin oder deinem Arzt ab, bevor du startest.");
+    var weak = state.weak;
+    if (weak.indexOf("abends") >= 0) out.push("Abends wirst du am ehesten schwach. Plane einen festen Abend-Snack mit etwa 150–200 kcal ein, zum Beispiel " + snack + ". Dann gehört er zum Plan und ist kein Ausrutscher.");
+    else if (weak.indexOf("nachts") >= 0) out.push("Spät nachts kommt der Hunger? Iss dein Abendessen eiweißreich und lass dir 150 kcal als Puffer für später, zum Beispiel " + snack + ".");
+    else if (weak.indexOf("nachmittags") >= 0) out.push("Gegen das Nachmittagstief hilft ein eiweißreiches Mittagessen und ein geplanter Snack gegen 15 Uhr, zum Beispiel " + snack + ".");
+    else if (weak.indexOf("stress") >= 0) out.push("Bei Stress greifst du eher zu. Leg dir einen Plan B bereit: Wasser oder Tee, kurz raus an die Luft, und erst dann entscheiden, ob du wirklich Hunger hast.");
+    else if (weak.indexOf("unterwegs") >= 0) out.push("Unterwegs wird es schwierig. Pack dir eine feste Notfall-Option ein, zum Beispiel einen Eiweißriegel oder Obst und Nüsse, dann musst du nicht spontan entscheiden.");
+    else if (weak.indexOf("wochenende") >= 0) out.push("Am Wochenende läuft es schwerer. Spar dir unter der Woche täglich etwa 100 kcal auf, dann hast du am Samstag rund 500 kcal Spielraum.");
+    else if (weak.indexOf("morgens") >= 0) out.push("Morgens fällt es dir schwer. Ein Frühstück mit mindestens 25 g Eiweiß hält bis mittags satt und spart Heißhunger später.");
+    if (veg) out.push("Für " + r.protein + " g Eiweiß am Tag rein pflanzlich: Plane in jede Mahlzeit eine Quelle wie Tofu, Tempeh, Linsen, Kichererbsen oder Sojajoghurt ein.");
+    else if (vegi) out.push("Für " + r.protein + " g Eiweiß ohne Fleisch: Magerquark, Skyr, Eier, Hüttenkäse und Linsen sind deine besten Helfer.");
+    else if (state.diet === "lowcarb") out.push("Low Carb klappt am besten mit viel Gemüse. Es bringt Ballaststoffe und füllt den Teller, ohne dein Kohlenhydrat-Budget von " + r.carbs + " g zu sprengen.");
+    if (state.goal === "muskel" && (state.sportFreq === "0" || state.sportFreq === "1-2")) out.push("Muskeln wachsen vor allem durch Krafttraining. Peile 3 Einheiten pro Woche an, sonst landet das Kalorienplus eher als Fett auf den Hüften.");
+    else if (state.sportFreq === "0") out.push("Du musst keinen Sport anfangen, aber jeder Schritt zählt. 7.000 bis 8.000 Schritte am Tag sind ein guter erster Richtwert.");
+    else if (state.sportTypes.trim()) out.push("An Tagen mit " + esc(state.sportTypes.trim()) + " darf es etwas mehr Kohlenhydrate geben, am besten 1–2 Stunden vor oder nach dem Training.");
+    out.push("Verteile dein Eiweiß auf " + meals + " Mahlzeiten, das sind etwa " + Math.round(r.protein / meals) + " g pro Mahlzeit. So bleibst du länger satt.");
+    if (state.avoid.trim()) out.push("Ich lasse " + esc(state.avoid.trim()) + " in allen Vorschlägen weg.");
+    out.push("Trink über den Tag verteilt etwa 2 Liter Wasser. Durst fühlt sich oft wie Hunger an.");
+    return out.slice(0, 3);
+  }
+
+  /* ---------- Ergebnis ---------- */
+  function renderResult() {
+    var r = calc();
+    setProgress(1, 1, "Dein Plan");
+    var pK = r.protein * 4, cK = r.carbs * 4, fK = r.fat * 9, tot = pK + cK + fK || 1;
+    var goalTxt = { ab: "Abnehmen", halten: "Gewicht halten", muskel: "Muskeln aufbauen" }[state.goal];
+    var targetFact = state.goal === "halten"
+      ? '<div class="fact"><span class="lbl">Ziel</span><span class="v">Gewicht halten</span><span class="sub">bei ' + fmt(num(state.weight), 1) + " kg</span></div>"
+      : '<div class="fact"><span class="lbl">Zielgewicht ' + fmt(num(state.target), 1) + ' kg</span><span class="v">' + (r.date ? fmtDate(r.date) : "offen") + '</span><span class="sub">' + (r.weeks ? "in ca. " + fmt(Math.round(r.weeks)) + " Wochen" : "Tempo zu gering für eine Prognose") + "</span></div>";
+    var tipList = tips(r);
+    app.innerHTML =
+      '<section class="card fade">' +
+        '<div class="q-head"><span class="eyebrow">' + goalTxt + "</span><h1>" + nameOr("Dein") + (state.name ? ", dein Plan ist fertig" : " Plan ist fertig") + "</h1></div>" +
+        '<div class="kcal"><span class="lead">Pro Tag</span><span class="num">' + fmt(r.kcal) + "<small>kcal</small></span></div>" +
+        '<div class="split" aria-hidden="true"><i style="flex:' + pK / tot + ";background:var(--protein)\"></i><i style=\"flex:" + cK / tot + ";background:var(--carbs)\"></i><i style=\"flex:" + fK / tot + ';background:var(--fat)"></i></div>' +
+        '<div class="macros">' +
+          macro("Eiweiß", r.protein, pK, tot, "--protein", fmt(r.pPerKg, 1) + " g/kg") +
+          macro("Kohlenh.", r.carbs, cK, tot, "--carbs", "") +
+          macro("Fett", r.fat, fK, tot, "--fat", fmt(r.fat / num(state.weight), 1) + " g/kg") +
+        "</div>" +
+        '<div class="facts">' +
+          '<div class="fact"><span class="lbl">Pro Woche</span><span class="v">' + weeklyText(r) + '</span><span class="sub">erwartete Veränderung</span></div>' +
+          targetFact +
+        "</div>" +
+        (r.note ? '<p class="explain">' + esc(r.note) + "</p>" : "") +
+        '<div class="stack"><h2>Drei Tipps für dich</h2><ol class="tips">' + tipList.map(function (t) { return "<li><span>" + t + "</span></li>"; }).join("") + "</ol></div>" +
+        '<details class="calc"><summary>So habe ich gerechnet</summary><table>' +
+          "<tr><td>Grundumsatz (Mifflin-St Jeor)</td><td>" + fmt(r.bmr) + " kcal</td></tr>" +
+          "<tr><td>Aktivitätsfaktor</td><td>× " + fmt(r.factor, 2) + "</td></tr>" +
+          "<tr><td>Gesamtumsatz</td><td>" + fmt(r.tdee) + " kcal</td></tr>" +
+          "<tr><td>Tagesziel</td><td>" + fmt(r.kcal) + " kcal</td></tr>" +
+          "<tr><td>Mindestwert</td><td>" + fmt(r.floor) + " kcal</td></tr>" +
+        "</table>" +
+        '<p class="note" style="margin-top:8px">Gesamtumsatz heißt: alles, was du an einem normalen Tag verbrauchst. ' +
+        (r.bmi > 30 ? "Beim Eiweiß rechne ich mit " + fmt(r.refW, 0) + " kg statt deinem aktuellen Gewicht, damit die Menge alltagstauglich bleibt. " : "") +
+        "Alle Werte sind Schätzungen. Nach 2–3 Wochen siehst du an der Waage, ob wir nachjustieren müssen.</p></details>" +
+        '<div class="nav"><button type="button" class="btn btn-ghost" id="edit">Antworten ändern</button><button type="button" class="btn btn-primary" id="confirm">' + (state.plan ? "Plan übernehmen" : "Plan bestätigen") + "</button></div>" +
+        (state.plan ? '<button type="button" class="btn btn-ghost" id="totracker">Zurück zum Tracker</button>' : "") +
+      "</section>";
+  }
+  function macro(lbl, g, k, tot, c, sub) {
+    return '<div class="macro" style="--c:var(' + c + ')"><span class="lbl">' + lbl + '</span><span class="g">' + g + '<small> g</small></span><span class="sub">' + Math.round(k / tot * 100) + " %" + (sub ? " · " + sub : "") + "</span></div>";
+  }
+
+  /* ---------- Foto-Auswertung mit Claude ---------- */
+  var AI_KEY = "fitnesstracker-claude-key", aiKey = "";
+  try { aiKey = localStorage.getItem(AI_KEY) || ""; } catch (e) {}
+  var photo = null, aiBusy = false, aiNote = "", aiQuestion = "", aiError = "";
+  function resetAi() { photo = null; aiBusy = false; aiNote = ""; aiQuestion = ""; aiError = ""; }
+  var MEAL_SCHEMA = {
+    type: "object", additionalProperties: false,
+    required: ["name", "annahme", "kcal", "eiweiss_g", "kohlenhydrate_g", "fett_g", "rueckfrage"],
+    properties: {
+      name: { type: "string", description: "Kurzer Name der Mahlzeit auf Deutsch" },
+      annahme: { type: "string", description: "Ein Satz: welche Portion und Zubereitung du annimmst" },
+      kcal: { type: "number" }, eiweiss_g: { type: "number" }, kohlenhydrate_g: { type: "number" }, fett_g: { type: "number" },
+      rueckfrage: { type: "string", description: "Genau eine kurze Rückfrage, wenn du wirklich unsicher bist, sonst leerer String" }
+    }
+  };
+  function aiBlock() {
+    if (editingId) return "";
+    var inner;
+    if (!aiKey) {
+      inner = '<p class="note" style="margin:0">Mit einem Claude-Schlüssel schätzt die App Kalorien und Makros aus einem Foto.</p>' +
+        '<div class="ai-row"><button type="button" class="btn btn-soft" id="ai-setup">Foto-Auswertung einrichten</button></div>';
+    } else {
+      inner =
+        '<div class="ai-row">' +
+          '<label class="btn btn-soft" for="ai-file" role="button" style="text-align:center">' + (photo ? "Anderes Foto" : "Foto aufnehmen") + "</label>" +
+          '<button type="button" class="btn btn-soft" id="ai-text"' + (aiBusy ? " disabled" : "") + ">Aus Beschreibung schätzen</button>" +
+        "</div>" +
+        '<input id="ai-file" class="visually-hidden" type="file" accept="image/*" capture="environment" tabindex="-1">' +
+        (photo ? '<div class="ai-photo"><img src="' + photo.url + '" alt="Dein Foto"><span>' + (aiBusy ? "Foto wird ausgewertet …" : "Dein Foto") + '</span><button type="button" class="linkbtn" id="ai-photo-clear">Entfernen</button></div>' : "") +
+        '<div class="field"><label for="m-desc">Beschreibung (optional)</label><textarea id="m-desc" data-draft="desc" placeholder="z. B. großer Teller, mit Sahnesoße, halb aufgegessen">' + esc(draft.desc || "") + "</textarea></div>" +
+        (aiBusy ? '<p class="note" style="margin:0">Claude schätzt gerade …</p>' : "") +
+        (aiQuestion ? '<p class="ai-q"><b>Rückfrage:</b> ' + esc(aiQuestion) + '<br><span class="note">Antworte im Feld „Beschreibung“ und tippe auf „Neu schätzen“.</span></p>' : "") +
+        (aiNote ? '<p class="ai-result"><b>Annahme:</b> ' + esc(aiNote) + "<br><span class=\"note\">Prüf die Werte unten und tippe dann auf „Eintragen“.</span></p>" : "") +
+        ((aiNote || aiQuestion || (aiError && (photo || draft.desc || draft.name))) && !aiBusy ? '<div class="ai-row"><button type="button" class="btn btn-ghost" id="ai-again">Neu schätzen</button></div>' : "") +
+        (aiError ? '<p class="error" role="alert">' + esc(aiError) + "</p>" : "");
+    }
+    return '<div class="ai">' + inner + "</div>";
+  }
+  function shrinkImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var max = 1280, w = img.naturalWidth, h = img.naturalHeight, sc = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement("canvas"); cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+        cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+        var dataUrl = cv.toDataURL("image/jpeg", 0.85);
+        URL.revokeObjectURL(url);
+        resolve({ url: dataUrl, data: dataUrl.split(",")[1], type: "image/jpeg" });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("bild")); };
+      img.src = url;
+    });
+  }
+  app.addEventListener("change", function (e) {
+    if (e.target.id !== "ai-file" || !e.target.files || !e.target.files[0]) return;
+    shrinkImage(e.target.files[0]).then(function (ph) { photo = ph; analyze(true); })
+      .catch(function () { aiError = "Das Foto konnte nicht gelesen werden. Versuch es mit einem anderen Bild."; renderTracker(); });
+  });
+  function aiErrText(status, body) {
+    var msg = body && body.error && body.error.message || "";
+    if (status === 401) return "Der Claude-Schlüssel ist ungültig. Prüf ihn in den Einstellungen (oben rechts).";
+    if (status === 400 && /credit|balance/i.test(msg)) return "Dein Guthaben bei Anthropic ist aufgebraucht. Lade es unter platform.claude.com → Guthaben auf.";
+    if (status === 429) return "Zu viele Anfragen in kurzer Zeit. Warte eine Minute und versuch es noch einmal.";
+    if (status === 529 || status >= 500) return "Claude ist gerade überlastet. Versuch es in ein paar Minuten noch einmal.";
+    return "Die Auswertung hat nicht geklappt (Fehler " + status + (msg ? ": " + msg : "") + ").";
+  }
+  function analyze(withPhoto) {
+    var desc = (draft.desc || "").trim(), name = (draft.name || "").trim();
+    if (!withPhoto && !desc && !name) { aiError = "Beschreib kurz, was du gegessen hast, oder mach ein Foto."; renderTracker(); return; }
+    aiBusy = true; aiError = ""; aiNote = ""; aiQuestion = ""; renderTracker();
+    var diet = LABELS.diet[state.diet] || "keine Angabe";
+    var system = "Du bist ein Ernährungscoach und schätzt Mahlzeiten für ein Kalorientagebuch. " +
+      "Schätze die Portion realistisch und gib Kalorien, Eiweiß, Kohlenhydrate und Fett für die gesamte gezeigte bzw. beschriebene Portion an. " +
+      "Antworte auf Deutsch. Die Person ernährt sich: " + diet + (state.avoid ? "; isst nicht: " + state.avoid : "") + ". " +
+      "Stell nur dann genau eine kurze Rückfrage, wenn eine Angabe die Schätzung stark verändern würde (z. B. Portionsgröße nicht erkennbar); gib trotzdem deine beste Schätzung ab. " +
+      "Ist auf dem Bild kein Essen zu sehen, setze alle Werte auf 0 und frag nach.";
+    var content = [];
+    if (withPhoto && photo) content.push({ type: "image", source: { type: "base64", media_type: photo.type, data: photo.data } });
+    var parts = [withPhoto && photo ? "Schätze die Mahlzeit auf dem Foto." : "Schätze diese Mahlzeit."];
+    if (name) parts.push("Name: " + name);
+    if (desc) parts.push("Hinweise von mir: " + desc);
+    content.push({ type: "text", text: parts.join("\n") });
+    fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": aiKey,
+        "anthropic-version": "2026-10-21",
+        "anthropic-beta": "server-side-fallback-2026-07-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-opus-5-5",
+        max_tokens: 16000,
+        fallbacks: "default",
+        system: system,
+        output_config: { format: { type: "json_schema", schema: MEAL_SCHEMA } },
+        messages: [{ role: "user", content: content }]
+      })
+    }).then(function (r) {
+      return r.json().catch(function () { return null; }).then(function (body) {
+        aiBusy = false;
+        if (!r.ok) { aiError = aiErrText(r.status, body); return; }
+        if (body.stop_reason === "refusal") { aiError = "Claude konnte dieses Bild nicht auswerten. Trag die Werte bitte von Hand ein."; return; }
+        var txt = (body.content || []).filter(function (b) { return b.type === "text"; }).map(function (b) { return b.text; }).join("");
+        var res; try { res = JSON.parse(txt); } catch (er) { aiError = "Die Antwort war unvollständig. Tippe auf „Neu schätzen“."; return; }
+        draft.name = res.name || draft.name;
+        draft.kcal = Math.round(res.kcal); draft.p = Math.round(res.eiweiss_g); draft.c = Math.round(res.kohlenhydrate_g); draft.f = Math.round(res.fett_g);
+        aiNote = res.annahme || ""; aiQuestion = (res.rueckfrage || "").trim();
+      });
+    }).catch(function () { aiBusy = false; aiError = "Keine Verbindung zu Claude. Bist du online?"; })
+      .then(function () { if (state.view === "tracker" && !showSettings) renderTracker(); });
+  }
+
+  /* ---------- Tracker ---------- */
+  var selDay = dayKey(new Date()), editingId = null, draft = {}, mealError = "";
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parseDay(k) { var a = k.split("-"); return new Date(+a[0], +a[1] - 1, +a[2]); }
+  function shiftDay(k, n) { var d = parseDay(k); d.setDate(d.getDate() + n); return dayKey(d); }
+  function nowTime() { var d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+  function meals(k) { return (state.log[k] || []).filter(function (m) { return !m.deleted; }); }
+  function totals(k) {
+    return meals(k).reduce(function (t, m) { t.kcal += +m.kcal || 0; t.p += +m.p || 0; t.c += +m.c || 0; t.f += +m.f || 0; return t; }, { kcal: 0, p: 0, c: 0, f: 0 });
+  }
+  var WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  function dayTitle(k) {
+    var today = dayKey(new Date());
+    if (k === today) return "Heute";
+    if (k === shiftDay(today, -1)) return "Gestern";
+    return parseDay(k).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
+  }
+
+  function ring(size, stroke, value, goal, color, center) {
+    var r = (size - stroke) / 2, c = 2 * Math.PI * r, pct = goal > 0 ? value / goal : 0;
+    var over = pct > 1.0001, shown = Math.min(pct, 1);
+    return '<svg viewBox="0 0 ' + size + " " + size + '" role="img" aria-label="' + Math.round(value) + " von " + goal + '">' +
+      '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="var(--line)" stroke-width="' + stroke + '"></circle>' +
+      (shown <= 0 ? "" : '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="' + (over ? "var(--warn)" : color) + '" stroke-width="' + stroke + '" stroke-linecap="round" ' +
+        'stroke-dasharray="' + (c * shown).toFixed(1) + " " + c.toFixed(1) + '" transform="rotate(-90 ' + size / 2 + " " + size / 2 + ')"></circle>') +
+      center + "</svg>";
+  }
+
+  function weekChart(endKey, goal) {
+    var W = 320, H = 170, top = 22, bottom = 26, left = 4, right = 4;
+    var days = [], max = goal * 1.25;
+    for (var i = 6; i >= 0; i--) { var k = shiftDay(endKey, -i), t = totals(k).kcal; days.push({ k: k, v: t }); if (t > max) max = t; }
+    var ch = H - top - bottom, slot = (W - left - right) / 7, bw = Math.min(26, slot * 0.56);
+    function y(v) { return top + ch - (v / max) * ch; }
+    var out = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Kalorien der letzten 7 Tage">';
+    out += '<line x1="' + left + '" x2="' + (W - right) + '" y1="' + (top + ch) + '" y2="' + (top + ch) + '" stroke="var(--line)" stroke-width="1"></line>';
+    days.forEach(function (d, i) {
+      var x = left + slot * i + (slot - bw) / 2, h = (d.v / max) * ch, sel = d.k === selDay;
+      var fill = d.v > goal * 1.1 ? "var(--carbs)" : sel ? "var(--accent)" : "var(--accent-soft)";
+      if (d.v > 0) out += '<rect x="' + x.toFixed(1) + '" y="' + y(d.v).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(h, 2).toFixed(1) + '" rx="5" fill="' + fill + '"></rect>';
+      if (d.v > 0) out += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y(d.v) - 5).toFixed(1) + '" text-anchor="middle" font-size="10" fill="var(--muted)">' + fmt(d.v) + "</text>";
+      out += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11.5" font-weight="' + (sel ? 700 : 500) + '" fill="' + (sel ? "var(--fg)" : "var(--muted)") + '">' + WD[parseDay(d.k).getDay()] + "</text>";
+    });
+    out += '<line x1="' + left + '" x2="' + (W - right) + '" y1="' + y(goal).toFixed(1) + '" y2="' + y(goal).toFixed(1) + '" stroke="var(--fg)" stroke-opacity=".45" stroke-width="1.2" stroke-dasharray="4 4"></line>';
+    out += '<text x="' + (W - right) + '" y="' + (y(goal) - 5).toFixed(1) + '" text-anchor="end" font-size="10" fill="var(--muted)">Ziel ' + fmt(goal) + "</text>";
+    return out + "</svg>";
+  }
+
+  function weekReview(endKey) {
+    var P = state.plan, logged = 0, inTarget = 0, sumK = 0, sumP = 0;
+    for (var i = 0; i < 7; i++) {
+      var k = shiftDay(endKey, -i), t = totals(k);
+      if (meals(k).length) { logged++; sumK += t.kcal; sumP += t.p; if (Math.abs(t.kcal - P.kcal) <= P.kcal * 0.1) inTarget++; }
+    }
+    var avgK = logged ? sumK / logged : 0, avgP = logged ? sumP / logged : 0, tip;
+    if (logged < 4) tip = "Trag nächste Woche an mindestens 5 Tagen alles ein. Erst dann ist die Auswertung aussagekräftig.";
+    else if (avgK > P.kcal * 1.1) tip = "Du lagst im Schnitt " + fmt(avgK - P.kcal) + " kcal über dem Ziel. Such dir die eine Mahlzeit oder den einen Snack, der am meisten ausmacht, und halbiere ihn.";
+    else if (avgP < P.protein * 0.85) tip = "Beim Eiweiß fehlen dir im Schnitt " + fmt(P.protein - avgP) + " g. Plane nächste Woche zu jeder Mahlzeit eine feste Eiweißquelle ein.";
+    else if (avgK < P.kcal * 0.85) tip = "Du hast deutlich weniger gegessen als geplant. Das klingt gut, macht aber auf Dauer Heißhunger. Iss nächste Woche näher an deinem Ziel.";
+    else tip = "Starke Woche. Bleib genau so dran und wieg dich einmal pro Woche zur gleichen Zeit.";
+    return '<section class="card fade review"><div class="q-head"><span class="eyebrow">Sonntag · Wochenrückblick</span><h2>Deine letzten 7 Tage</h2></div>' +
+      '<div class="facts">' +
+        '<div class="fact"><span class="lbl">Ø Kalorien</span><span class="v">' + (logged ? fmt(avgK) + " kcal" : "–") + '</span><span class="sub">Ziel ' + fmt(P.kcal) + "</span></div>" +
+        '<div class="fact"><span class="lbl">Ø Eiweiß</span><span class="v">' + (logged ? fmt(avgP) + " g" : "–") + '</span><span class="sub">Ziel ' + P.protein + " g</span></div>" +
+        '<div class="fact"><span class="lbl">Tage eingetragen</span><span class="v">' + logged + ' von 7</span><span class="sub">&nbsp;</span></div>' +
+        '<div class="fact"><span class="lbl">Tage im Ziel</span><span class="v">' + inTarget + '</span><span class="sub">± 10 % der Kalorien</span></div>' +
+      "</div>" +
+      '<p class="explain"><b>Deine Anpassung für nächste Woche:</b> ' + esc(tip) + "</p></section>";
+  }
+
+  function saveMeal() {
+    var name = (draft.name || "").trim(), time = draft.time || nowTime();
+    var p = num(draft.p) || 0, c = num(draft.c) || 0, f = num(draft.f) || 0, k = num(draft.kcal);
+    if (!name) { mealError = "Bitte gib an, was du gegessen hast."; renderTracker(); return; }
+    if (!(k >= 0)) k = Math.round(p * 4 + c * 4 + f * 9);
+    if (!(k > 0)) { mealError = "Bitte gib die Kalorien an, oder Eiweiß, Kohlenhydrate und Fett. Dann rechne ich die Kalorien aus."; renderTracker(); return; }
+    var list = state.log[selDay] = (state.log[selDay] || []);
+    var entry = { id: editingId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)), time: time, name: name, kcal: Math.round(k), p: Math.round(p), c: Math.round(c), f: Math.round(f), updatedAt: Date.now() };
+    var at = -1; list.forEach(function (m, i) { if (m.id === entry.id) at = i; });
+    if (at >= 0) list[at] = entry; else list.push(entry);
+    list.sort(function (x, y) { return x.time < y.time ? -1 : x.time > y.time ? 1 : 0; });
+    editingId = null; draft = {}; mealError = ""; resetAi();
+    save(); renderTracker();
+  }
+
+  function renderTracker() {
+    var P = state.plan;
+    if (!P) { state.view = "result"; render(); return; }
+    setProgress(1, 1, "Tracker");
+    var today = dayKey(new Date()), t = totals(selDay), list = meals(selDay);
+    var rest = P.kcal - t.kcal;
+    var center = '<text x="100" y="94" text-anchor="middle" font-size="38" font-weight="700" fill="var(--fg)" style="font-family:var(--f-display)">' + fmt(Math.abs(rest)) + "</text>" +
+      '<text x="100" y="120" text-anchor="middle" font-size="14" fill="var(--muted)">' + (rest >= 0 ? "kcal übrig" : "kcal drüber") + "</text>" +
+      '<text x="100" y="142" text-anchor="middle" font-size="12" fill="var(--muted)">' + fmt(t.kcal) + " / " + fmt(P.kcal) + "</text>";
+    function small(lbl, v, goal, color) {
+      return "<div>" + ring(84, 9, v, goal, color, '<text x="42" y="47" text-anchor="middle" font-size="16" font-weight="700" fill="var(--fg)">' + Math.round(v) + "</text>") +
+        '<div class="lbl">' + lbl + '</div><div class="sub">von ' + goal + " g</div></div>";
+    }
+    var isSunday = parseDay(selDay).getDay() === 0;
+    var d = draft;
+    app.innerHTML =
+      '<section class="card fade">' +
+        '<div class="dayhead"><button type="button" class="iconbtn" id="day-prev" aria-label="Vorheriger Tag">‹</button><h1>' + dayTitle(selDay) + '</h1>' +
+          '<button type="button" class="iconbtn" id="day-next" aria-label="Nächster Tag"' + (selDay >= today ? " disabled" : "") + ">›</button></div>" +
+        '<div class="ringbig">' + ring(200, 16, t.kcal, P.kcal, "var(--accent)", center) + "</div>" +
+        '<div class="rings3">' + small("Eiweiß", t.p, P.protein, "var(--protein)") + small("Kohlenh.", t.c, P.carbs, "var(--carbs)") + small("Fett", t.f, P.fat, "var(--fat)") + "</div>" +
+      "</section>" +
+      (isSunday ? weekReview(selDay) : "") +
+      '<section class="card fade"><div class="q-head"><span class="eyebrow">Tagebuch</span><h2>' + (list.length ? list.length + (list.length === 1 ? " Mahlzeit" : " Mahlzeiten") : "Noch nichts eingetragen") + "</h2></div>" +
+        (list.length ? '<ul class="meals">' + list.map(function (m) {
+          return '<li class="meal"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(m.name) + '</div><div class="mac">E ' + m.p + " g · K " + m.c + " g · F " + m.f + " g</div></div>" +
+            '<div><div class="kc">' + fmt(m.kcal) + ' kcal</div><div class="acts">' +
+              (selDay !== today ? '<button type="button" class="linkbtn" data-meal="' + esc(m.id) + '" data-act="again">Heute nochmal</button>' : "") +
+              '<button type="button" class="linkbtn" data-meal="' + esc(m.id) + '" data-act="edit">Ändern</button>' +
+              '<button type="button" class="linkbtn danger" data-meal="' + esc(m.id) + '" data-act="del">Löschen</button></div></div></li>';
+        }).join("") + "</ul>" : '<p class="empty">Trag unten deine erste Mahlzeit für diesen Tag ein.</p>') +
+      "</section>" +
+      '<form class="card fade" id="mealform" novalidate><div class="q-head"><span class="eyebrow">' + (editingId ? "Eintrag ändern" : "Mahlzeit eintragen") + "</span><h2>" + (editingId ? "Was soll ich korrigieren?" : "Was hast du gegessen?") + "</h2></div>" +
+        aiBlock() +
+        '<div class="formgrid"><div class="field"><label for="m-time">Uhrzeit</label><input id="m-time" data-draft="time" type="time" value="' + esc(d.time || (selDay === today ? nowTime() : "12:00")) + '"></div>' +
+          '<div class="field"><label for="m-name">Mahlzeit</label><input id="m-name" data-draft="name" type="text" autocomplete="off" placeholder="z. B. Haferflocken mit Beeren" value="' + esc(d.name || "") + '"></div></div>' +
+        '<div class="macgrid">' +
+          '<div class="field"><label for="m-kcal">kcal</label><input id="m-kcal" data-draft="kcal" type="number" inputmode="numeric" min="0" value="' + esc(d.kcal == null ? "" : d.kcal) + '"></div>' +
+          '<div class="field"><label for="m-p">Eiweiß g</label><input id="m-p" data-draft="p" type="number" inputmode="decimal" min="0" value="' + esc(d.p == null ? "" : d.p) + '"></div>' +
+          '<div class="field"><label for="m-c">Kohlenh. g</label><input id="m-c" data-draft="c" type="number" inputmode="decimal" min="0" value="' + esc(d.c == null ? "" : d.c) + '"></div>' +
+          '<div class="field"><label for="m-f">Fett g</label><input id="m-f" data-draft="f" type="number" inputmode="decimal" min="0" value="' + esc(d.f == null ? "" : d.f) + '"></div>' +
+        "</div>" +
+        '<p class="note">Lässt du die Kalorien leer, rechne ich sie aus Eiweiß, Kohlenhydraten und Fett aus.</p>' +
+        (mealError ? '<p class="error" role="alert">' + esc(mealError) + "</p>" : "") +
+        '<div class="nav">' + (editingId ? '<button type="button" class="btn btn-ghost" id="meal-cancel">Abbrechen</button>' : "") +
+          '<button type="submit" class="btn btn-primary">' + (editingId ? "Änderung speichern" : "Eintragen") + "</button></div>" +
+      "</form>" +
+      '<section class="card fade"><div class="q-head"><span class="eyebrow">Verlauf</span><h2>Kalorien der letzten 7 Tage</h2></div><div class="chart">' + weekChart(selDay, P.kcal) + "</div>" +
+        (isSunday ? "" : '<p class="note">Sonntags siehst du hier oben deinen Wochenrückblick mit einer Anpassung für die nächste Woche.</p>') + "</section>" +
+      '<div class="nav"><button type="button" class="btn btn-ghost" id="toresult" style="flex:1">Mein Plan</button><button type="button" class="btn btn-ghost" id="edit" style="flex:1">Antworten ändern</button></div>' +
+      '<button type="button" class="btn btn-ghost" id="open-settings" style="width:100%">Einstellungen (Sicherung &amp; Claude-Schlüssel)</button>';
+  }
+
+  function render() {
+    if (showSettings) renderSettings();
+    else if (state.view === "result") renderResult();
+    else if (state.view === "tracker" || state.view === "done") { if (state.view === "done") state.view = "tracker"; renderTracker(); }
+    else renderQuestion();
+  }
+  render();
+})();
+</script>
+</body>
+</html>

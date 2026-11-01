@@ -695,7 +695,7 @@ svg text { font-family: var(--f-body); }
 
   /* ---------- Foto-Auswertung mit Claude ---------- */
   /* Adresse des Cloudflare Workers (siehe worker/README.md). Leer = Foto-Auswertung noch nicht eingerichtet. */
-  var WORKER_URL = "";
+  var WORKER_URL = "https://fitness-tracker-foto.eduard-helbling.workers.dev/";
   var KONTAKT = "Das ist eine Testversion und du hast {n} Mahlzeiten-Fotos verbraucht. Melde dich beim Eduard unter " +
     '<a href="mailto:Eduard.Helbling@gmail.com">Eduard.Helbling@gmail.com</a>, wenn du das Feature weiter nutzen möchtest.';
   var DEV_KEY = "fitnesstracker-geraet", USE_KEY = "fitnesstracker-fotos", deviceId = "", usage = { verbraucht: 0, limit: null };
